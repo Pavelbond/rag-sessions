@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Сборщик архива</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 { color: #58a6ff; }
+        button {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        button:hover { background: #2ea043; }
+        pre {
+            background: #161b22;
+            padding: 16px;
+            border-radius: 8px;
+            overflow: auto;
+            font-size: 0.85rem;
+        }
+        #log {
+            background: #161b22;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+        .ok { color: #3fb950; }
+        .err { color: #f85149; }
+        .info { color: #58a6ff; }
+    </style>
+</head>
+<body>
+
+    <h1>📦 Сборщик архива диалогов</h1>
+    <p>Нажми кнопку, чтобы собрать все <code>.html</code> файлы из папки <code>sessions/</code> в единый архив.</p>
+
+    <button id="buildBtn">🔨 Собрать архив</button>
+
+    <h3>Лог:</h3>
+    <div id="log">Готов к работе. Нажми кнопку.</div>
+
+    <h3>Результат (archive.json):</h3>
+    <pre id="output">пока пусто</pre>
+
+    <script>
+        const logDiv = document.getElementById('log');
+        const outputPre = document.getElementById('output');
+
+        function log(msg, type = 'info') {
+            const span = document.createElement('span');
+            span.className = type;
+            span.textContent = msg + '\n';
+            logDiv.appendChild(span);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        document.getElementById('buildBtn').addEventListener('click', async function() {
+            log('🔍 Начинаю сбор...', 'info');
+            logDiv.innerHTML = '';
+            outputPre.textContent = '';
+
+            try {
+                // Пытаемся загрузить файлы из папки sessions/
+                // ВНИМАНИЕ: браузер НЕ может читать папки напрямую!
+                // Поэтому этот скрипт работает только если:
+                // 1. Ты используешь расширение для браузера (типа "Allow CORS")
+                // 2. Или запускаешь через локальный сервер (VS Code Live Server)
+                // 3. Или вручную вписываешь имена файлов ниже
+
+                // ---- ВРЕМЕННОЕ РЕШЕНИЕ ----
+                // Мы просто собираем все файлы, которые ты укажешь вручную
+                const files = [
+                    'sessions/session.html'
+                    // Добавляй сюда новые файлы: 'sessions/новая-сессия.html'
+                ];
+
+                const allMessages = [];
+                let total = 0;
+
+                for (const file of files) {
+                    log(`📄 Загружаю: ${file}`, 'info');
+                    try {
+                        const response = await fetch(file);
+                        if (!response.ok) {
+                            log(`❌ Не найден: ${file}`, 'err');
+                            continue;
+                        }
+                        const html = await response.text();
+
+                        // Парсим HTML, вытаскиваем сообщения
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        const msgElements = doc.querySelectorAll('.msg');
+
+                        let count = 0;
+                        msgElements.forEach(el => {
+                            const roleEl = el.querySelector('.role');
+                            const textEl = el.querySelector('.text');
+                            if (roleEl && textEl) {
+                                const role = roleEl.textContent.trim();
+                                const text = textEl.textContent.trim();
+                                allMessages.push({
+                                    role: role.includes('Вы') ? 'user' : 'assistant',
+                                    text: text,
+                                    source: file,
+                                    date: new Date().toISOString().slice(0,10)
+                                });
+                                count++;
+                            }
+                        });
+
+                        log(`✅ Загружено ${count} сообщений из ${file}`, 'ok');
+                        total += count;
+                    } catch (e) {
+                        log(`❌ Ошибка при загрузке ${file}: ${e.message}`, 'err');
+                    }
+                }
+
+                // Сохраняем результат
+                const archive = {
+                    totalMessages: total,
+                    sessions: files.length,
+                    messages: allMessages,
+                    generated: new Date().toISOString()
+                };
+
+                const json = JSON.stringify(archive, null, 2);
+                outputPre.textContent = json;
+
+                // Скачиваем файл
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'archive.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                log(`🎉 Готово! Всего сообщений: ${total}`, 'ok');
+                log(`💾 Файл archive.json скачан автоматически`, 'info');
+
+            } catch (e) {
+                log(`❌ Критическая ошибка: ${e.message}`, 'err');
+            }
+        });
+    </script>
+
+</body>
+</html>
